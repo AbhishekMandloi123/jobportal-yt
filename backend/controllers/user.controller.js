@@ -15,8 +15,6 @@ export const register = async (req, res) => {
             });
         };
         const file = req.file;
-        const fileUri = getDataUri(file);
-        const cloudResponse = await cloudinary.uploader.upload(fileUri.content);
 
         const user = await User.findOne({ email });
         if (user) {
@@ -26,6 +24,13 @@ export const register = async (req, res) => {
             })
         }
         const hashedPassword = await bcrypt.hash(password, 10);
+        let profilePhoto = "";
+
+        if (file) {
+            const fileUri = getDataUri(file);
+            const cloudResponse = await cloudinary.uploader.upload(fileUri.content);
+            profilePhoto = cloudResponse.secure_url;
+        }
 
         await User.create({
             fullname,
@@ -34,7 +39,7 @@ export const register = async (req, res) => {
             password: hashedPassword,
             role,
             profile:{
-                profilePhoto:cloudResponse.secure_url,
+                profilePhoto,
             }
         });
 
@@ -44,6 +49,10 @@ export const register = async (req, res) => {
         });
     } catch (error) {
         console.log(error);
+        return res.status(500).json({
+            message: "Unable to create account. Please try again.",
+            success: false
+        });
     }
 }
 export const login = async (req, res) => {
@@ -109,6 +118,45 @@ export const logout = async (req, res) => {
         })
     } catch (error) {
         console.log(error);
+    }
+}
+export const toggleSavedJob = async (req, res) => {
+    try {
+        const user = await User.findById(req.id);
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found.",
+                success: false
+            });
+        }
+
+        const jobId = req.params.jobId;
+        if (!user.profile) {
+            user.profile = {};
+        }
+        const savedJobs = user.profile.savedJobs || [];
+        const isSaved = savedJobs.some(savedJob => savedJob.toString() === jobId);
+
+        if (isSaved) {
+            user.profile.savedJobs = savedJobs.filter(savedJob => savedJob.toString() !== jobId);
+        } else {
+            user.profile.savedJobs = [...savedJobs, jobId];
+        }
+
+        await user.save();
+
+        return res.status(200).json({
+            message: isSaved ? "Job removed from saved jobs." : "Job saved for later.",
+            saved: !isSaved,
+            savedJobs: user.profile.savedJobs,
+            success: true
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            message: "Unable to update saved jobs.",
+            success: false
+        });
     }
 }
 export const updateProfile = async (req, res) => {
